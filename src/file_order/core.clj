@@ -1,11 +1,11 @@
-(ns file-order.core
+(ns file-order.core  
   (:use seesaw.core seesaw.chooser)
   (:require [seesaw.dnd :as dnd])
-  (:import (java.awt GraphicsEnvironment)
+  (:import (java.awt GraphicsEnvironment BorderLayout)
            (java.awt.geom AffineTransform)
            (java.io File)
            (javax.imageio ImageIO)
-           (javax.swing ImageIcon JFileChooser)))
+           (javax.swing ImageIcon JFileChooser JFrame)))
 
 (def MAX_HEIGHT 200)
 (def MAX_WIDTH  200)
@@ -37,7 +37,7 @@
           thumb (get thumbs n)]
       (.setIcon renderer (ImageIcon. thumb)))))
 
-(defn files-listbox [dir]
+(defn create-files-listbox [dir]
   (let [files (load-files dir)
         thumbs (into {} (map (fn [f] [(.getName f) (create-thumbnail f)]) files))]
     (listbox
@@ -60,15 +60,16 @@
   (println "Order!"))
 
 (defn create-main-frame [dir]
-  (-> (frame :title "file-order"
-             :on-close :exit
-             :content (border-panel 
-                        :center (scrollable (files-listbox dir))
-                        :south (button 
-                                 :text "Order!"
-                                 :listen [:action order-list])))
-    pack!
-    show!))
+  (doto (JFrame.)
+    (.setTitle "file-order")
+    (.setDefaultCloseOperation JFrame/EXIT_ON_CLOSE)
+    (.setLayout (BorderLayout.))
+    (.add (scrollable (create-files-listbox dir)) BorderLayout/CENTER)
+    (.add (button :text "Order!"
+                  :listen [:action order-list])
+          BorderLayout/SOUTH)
+    (.pack)
+    (.show)))
 
 (defn choose-directory []
   (let [chooser (JFileChooser.)]
