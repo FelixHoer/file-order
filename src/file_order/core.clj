@@ -1,11 +1,12 @@
 (ns file-order.core  
-  (:use seesaw.core seesaw.chooser)
+  (:use seesaw.core)
   (:require [seesaw.dnd :as dnd])
   (:import (java.awt GraphicsEnvironment BorderLayout)
            (java.awt.geom AffineTransform)
+           (java.awt.event ActionListener)
            (java.io File)
            (javax.imageio ImageIO)
-           (javax.swing ImageIcon JFileChooser JFrame)))
+           (javax.swing ImageIcon JFileChooser JFrame JButton)))
 
 (def MAX_HEIGHT 200)
 (def MAX_WIDTH  200)
@@ -59,15 +60,21 @@
 (defn order-list [& args]
   (println "Order!"))
 
+(defn create-button [name action-fn]
+  (let [button (JButton. name)
+        action-proxy (proxy [ActionListener] []
+          (actionPerformed [e]
+            (action-fn)))]
+    (.addActionListener button action-proxy)
+    button))
+
 (defn create-main-frame [dir]
   (doto (JFrame.)
     (.setTitle "file-order")
     (.setDefaultCloseOperation JFrame/EXIT_ON_CLOSE)
     (.setLayout (BorderLayout.))
     (.add (scrollable (create-files-listbox dir)) BorderLayout/CENTER)
-    (.add (button :text "Order!"
-                  :listen [:action order-list])
-          BorderLayout/SOUTH)
+    (.add (create-button "Order!" order-list) BorderLayout/SOUTH)
     (.pack)
     (.show)))
 
