@@ -1,12 +1,10 @@
-(ns file-order.core  
-  (:use seesaw.core)
-  (:require [seesaw.dnd :as dnd])
-  (:import (java.awt GraphicsEnvironment BorderLayout)
+(ns file-order.core
+  (:import (java.awt GraphicsEnvironment BorderLayout Dimension)
            (java.awt.geom AffineTransform)
            (java.awt.event ActionListener)
            (java.io File)
            (javax.imageio ImageIO)
-           (javax.swing ImageIcon JFileChooser JFrame JButton)))
+           (javax.swing ImageIcon JFileChooser JPanel JFrame JButton JLabel JScrollPane SwingUtilities)))
 
 (def MAX_HEIGHT 200)
 (def MAX_WIDTH  200)
@@ -32,30 +30,40 @@
 (defn load-files [dir]
   (seq (.listFiles dir)))
 
+(comment
 (defn create-render-fn [thumbs]
   (fn [renderer info]
     (let [n (:value info)
           thumb (get thumbs n)]
       (.setIcon renderer (ImageIcon. thumb)))))
+)
 
-(defn create-files-listbox [dir]
+(defn create-item-panel [name]
+  (doto (JPanel.)
+    (.add (JLabel. name))))
+
+(defn layout [item-panels]
+  (let [indexed-items (map vector item-panels (iterate inc 0))]
+    (doseq [[p i] indexed-items]
+      (.setBounds p (* 210 (mod i 3)) (* 210 (quot i 3)) 200 200))
+    item-panels))
+
+(defn create-files-grid [dir]
   (let [files (load-files dir)
-        thumbs (into {} (map (fn [f] [(.getName f) (create-thumbnail f)]) files))]
-    (listbox
-      :model (map #(.getName %) files)
-      :renderer (create-render-fn thumbs)
-      :drag-enabled? true
-      :drop-mode :insert
-      :transfer-handler [
-         :import [dnd/string-flavor (fn [{:keys [target data drop-location]}]
-                                      (doto (.getModel target)
-                                        (.remove (:index data))
-                                        (.add (:index drop-location) (:selection data))))]
-         :export {
-           :actions (constantly :move)
-           :start   (fn [c] [dnd/string-flavor {:selection (selection c) 
-                                                :index (.getSelectedIndex c)}])
-          }])))
+        thumbs (into {} (map (fn [f] [(.getName f) (create-thumbnail f)]) files))
+        file-names (map #(.getName %) files)
+        item-panels (layout (map create-item-panel file-names))
+        grid-panel (proxy [JPanel] []
+                    (paintComponent [g]
+                      (proxy-super paintComponent g))
+                    (getPreferredSize []
+                      (let [cols (max 1 (quot (.getWidth this) 210))
+                            rows (inc (quot (dec (count files)) cols))]
+                        (Dimension. (* 210 cols) (* 210 rows)))))]
+    (.setLayout grid-panel nil)
+    (.setSize grid-panel 660 400)
+    (doseq [item-panel item-panels] (.add grid-panel item-panel))
+    grid-panel))
 
 (defn order-list [& args]
   (println "Order!"))
@@ -73,7 +81,7 @@
     (.setTitle "file-order")
     (.setDefaultCloseOperation JFrame/EXIT_ON_CLOSE)
     (.setLayout (BorderLayout.))
-    (.add (scrollable (create-files-listbox dir)) BorderLayout/CENTER)
+    (.add (JScrollPane. (create-files-grid dir)) BorderLayout/CENTER)
     (.add (create-button "Order!" order-list) BorderLayout/SOUTH)
     (.pack)
     (.show)))
@@ -87,6 +95,7 @@
       nil)))
 
 (defn -main [& args]
-  (invoke-later
-    (let [dir (choose-directory)]
-      (if (not (nil? dir)) (create-main-frame dir)))))
+  (SwingUtilities/invokeLater 
+    #(let [dir (choose-directory)]
+        (if (not (nil? dir)) (create-main-frame dir))
+        nil)))
