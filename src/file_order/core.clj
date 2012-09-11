@@ -1,25 +1,28 @@
 (ns file-order.core
-  (:import (java.awt GraphicsEnvironment BorderLayout Dimension)
+  (:import (java.awt GraphicsEnvironment BorderLayout Dimension Toolkit)
            (java.awt.geom AffineTransform)
            (java.awt.event ActionListener)
            (java.io File)
            (javax.imageio ImageIO)
            (javax.swing ImageIcon JFileChooser JPanel JFrame JButton JLabel JScrollPane SwingUtilities)))
 
-(def MAX_HEIGHT 200)
-(def MAX_WIDTH  200)
+(def ITEM_HEIGHT 200)
+(def ITEM_WIDTH  200)
+
+(def ITEM_BORDER_HEIGHT (+ 10 ITEM_HEIGHT))
+(def ITEM_BORDER_WIDTH  (+ 10 ITEM_WIDTH))
 
 (defn calculate-ratio [image]
   (let [w (.getWidth image)
         h (.getHeight image)
         ratio (if (> (/ h w) (/ w h))
-                (/ MAX_HEIGHT h)
-                (/ MAX_WIDTH w))]
+                (/ ITEM_HEIGHT h)
+                (/ ITEM_WIDTH w))]
     ratio))
 
 (defn create-thumbnail [f]
   (let [src (ImageIO/read f)
-        image (.createCompatibleImage (.getDefaultConfiguration (.getDefaultScreenDevice (GraphicsEnvironment/getLocalGraphicsEnvironment))) MAX_WIDTH MAX_HEIGHT)
+        image (.createCompatibleImage (.getDefaultConfiguration (.getDefaultScreenDevice (GraphicsEnvironment/getLocalGraphicsEnvironment))) ITEM_WIDTH ITEM_HEIGHT)
         ratio (calculate-ratio src)
         at (AffineTransform/getScaleInstance ratio ratio)]
     (doto (.createGraphics image)
@@ -42,27 +45,35 @@
   (doto (JPanel.)
     (.add (JLabel. name))))
 
-(defn layout [item-panels]
-  (let [indexed-items (map vector item-panels (iterate inc 0))]
+(defn layout [item-panels width]
+  (let [indexed-items (map vector item-panels (iterate inc 0))
+        cols (max 1 (quot width ITEM_BORDER_WIDTH))]
     (doseq [[p i] indexed-items]
-      (.setBounds p (* 210 (mod i 3)) (* 210 (quot i 3)) 200 200))
+      (.setBounds p 
+        (* ITEM_BORDER_WIDTH (mod i cols)) 
+        (* ITEM_BORDER_HEIGHT (quot i cols)) 
+        ITEM_WIDTH 
+        ITEM_HEIGHT))
     item-panels))
 
 (defn create-files-grid [dir]
   (let [files (load-files dir)
         thumbs (into {} (map (fn [f] [(.getName f) (create-thumbnail f)]) files))
         file-names (map #(.getName %) files)
-        item-panels (layout (map create-item-panel file-names))
+        item-panels (map create-item-panel file-names)
         grid-panel (proxy [JPanel] []
                     (paintComponent [g]
                       (proxy-super paintComponent g))
                     (getPreferredSize []
-                      (let [cols (max 1 (quot (.getWidth this) 210))
+                      (let [cols (max 1 (quot (.getWidth this) ITEM_BORDER_WIDTH))
                             rows (inc (quot (dec (count files)) cols))]
-                        (Dimension. (* 210 cols) (* 210 rows)))))]
+                        (Dimension. 
+                          (* ITEM_BORDER_WIDTH cols) 
+                          (* ITEM_BORDER_HEIGHT rows)))))]
+    (.setSize grid-panel 800 600)
     (.setLayout grid-panel nil)
-    (.setSize grid-panel 660 400)
-    (doseq [item-panel item-panels] (.add grid-panel item-panel))
+    (doseq [item-panel (layout item-panels 800)] 
+      (.add grid-panel item-panel))
     grid-panel))
 
 (defn order-list [& args]
