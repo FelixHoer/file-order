@@ -1,7 +1,7 @@
 (ns file-order.core
-  (:import (java.awt GraphicsEnvironment BorderLayout Dimension Toolkit)
+  (:import (java.awt GraphicsEnvironment BorderLayout GridLayout Dimension Toolkit)
            (java.awt.geom AffineTransform)
-           (java.awt.event ActionListener)
+           (java.awt.event ActionListener ComponentListener)
            (java.io File)
            (javax.imageio ImageIO)
            (javax.swing ImageIcon JFileChooser JPanel JFrame JButton JLabel JScrollPane SwingUtilities)))
@@ -12,8 +12,10 @@
 (def ITEM_HEIGHT (+ 30 IMAGE_HEIGHT))
 (def ITEM_WIDTH  IMAGE_WIDTH)
 
-(def ITEM_BORDER_HEIGHT (+ 10 ITEM_HEIGHT))
-(def ITEM_BORDER_WIDTH  (+ 10 ITEM_WIDTH))
+(def ITEM_BORDER 10)
+
+(def ITEM_BORDER_HEIGHT (+ ITEM_BORDER ITEM_HEIGHT))
+(def ITEM_BORDER_WIDTH  (+ ITEM_BORDER ITEM_WIDTH))
 
 (defn calculate-ratio [image]
   (let [w (.getWidth image)
@@ -45,32 +47,29 @@
   (doto (JPanel.)
     (.add (create-item-label f))))
 
-(defn layout [item-panels width]
-  (let [indexed-items (map vector item-panels (iterate inc 0))
-        cols (max 1 (quot width ITEM_BORDER_WIDTH))]
-    (doseq [[p i] indexed-items]
-      (.setBounds p 
-        (* ITEM_BORDER_WIDTH (mod i cols)) 
-        (* ITEM_BORDER_HEIGHT (quot i cols)) 
-        ITEM_WIDTH 
-        ITEM_HEIGHT))
-    item-panels))
+(defn layout! [panel items]
+  (let [cols (max 1 (quot (.getWidth panel) ITEM_BORDER_WIDTH))]
+    (.setLayout panel (GridLayout. 0 cols ITEM_BORDER ITEM_BORDER))))
+
+(defn create-resize-proxy [f]
+  (proxy [ComponentListener] []
+    (componentHidden [e])
+    (componentMoved [e])
+    (componentShown [e])
+    (componentResized [e]
+      (f))))
 
 (defn create-files-grid [dir]
   (let [files (load-files dir)
         item-panels (map create-item-panel files)
         grid-panel (proxy [JPanel] []
                     (paintComponent [g]
-                      (proxy-super paintComponent g))
-                    (getPreferredSize []
-                      (let [cols (max 1 (quot (.getWidth this) ITEM_BORDER_WIDTH))
-                            rows (inc (quot (dec (count files)) cols))]
-                        (Dimension. 
-                          (* ITEM_BORDER_WIDTH cols) 
-                          (* ITEM_BORDER_HEIGHT rows)))))]
-    (.setSize grid-panel 800 600)
-    (.setLayout grid-panel nil)
-    (doseq [item-panel (layout item-panels 800)] 
+                      (proxy-super paintComponent g)))
+        resize-listener (create-resize-proxy #(layout! grid-panel item-panels))]
+    (doto grid-panel
+      (.setSize 800 600)
+      (.addComponentListener resize-listener))
+    (doseq [item-panel item-panels] 
       (.add grid-panel item-panel))
     grid-panel))
 
@@ -85,15 +84,24 @@
     (.addActionListener button action-proxy)
     button))
 
+(defn create-vertical-scrollpane [c]
+  (JScrollPane. c 
+    JScrollPane/VERTICAL_SCROLLBAR_AS_NEEDED 
+    JScrollPane/HORIZONTAL_SCROLLBAR_NEVER))
+
 (defn create-main-frame [dir]
-  (doto (JFrame.)
-    (.setTitle "file-order")
-    (.setDefaultCloseOperation JFrame/EXIT_ON_CLOSE)
-    (.setLayout (BorderLayout.))
-    (.add (JScrollPane. (create-files-grid dir)) BorderLayout/CENTER)
-    (.add (create-button "Order!" order-list) BorderLayout/SOUTH)
-    (.pack)
-    (.show)))
+  (let [frame (JFrame.)
+        grid-panel (create-files-grid dir)]
+    (doto frame
+      (.setTitle "file-order")
+      (.setDefaultCloseOperation JFrame/EXIT_ON_CLOSE)
+      (.setLayout (BorderLayout.))
+      (.add (create-vertical-scrollpane grid-panel) BorderLayout/CENTER)
+      (.add (create-button "Order!" order-list) BorderLayout/SOUTH)
+      (.addComponentListener (create-resize-proxy 
+        #(.setSize grid-panel (.getWidth frame) (.getHeight grid-panel))))
+      (.pack)
+      (.show))))
 
 (defn choose-directory []
   (let [chooser (JFileChooser.)]
