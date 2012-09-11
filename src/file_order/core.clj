@@ -6,8 +6,11 @@
            (javax.imageio ImageIO)
            (javax.swing ImageIcon JFileChooser JPanel JFrame JButton JLabel JScrollPane SwingUtilities)))
 
-(def ITEM_HEIGHT 200)
-(def ITEM_WIDTH  200)
+(def IMAGE_HEIGHT 200)
+(def IMAGE_WIDTH  200)
+
+(def ITEM_HEIGHT (+ 30 IMAGE_HEIGHT))
+(def ITEM_WIDTH  IMAGE_WIDTH)
 
 (def ITEM_BORDER_HEIGHT (+ 10 ITEM_HEIGHT))
 (def ITEM_BORDER_WIDTH  (+ 10 ITEM_WIDTH))
@@ -16,13 +19,13 @@
   (let [w (.getWidth image)
         h (.getHeight image)
         ratio (if (> (/ h w) (/ w h))
-                (/ ITEM_HEIGHT h)
-                (/ ITEM_WIDTH w))]
+                (/ IMAGE_HEIGHT h)
+                (/ IMAGE_HEIGHT w))]
     ratio))
 
 (defn create-thumbnail [f]
   (let [src (ImageIO/read f)
-        image (.createCompatibleImage (.getDefaultConfiguration (.getDefaultScreenDevice (GraphicsEnvironment/getLocalGraphicsEnvironment))) ITEM_WIDTH ITEM_HEIGHT)
+        image (.createCompatibleImage (.getDefaultConfiguration (.getDefaultScreenDevice (GraphicsEnvironment/getLocalGraphicsEnvironment))) IMAGE_WIDTH IMAGE_HEIGHT)
         ratio (calculate-ratio src)
         at (AffineTransform/getScaleInstance ratio ratio)]
     (doto (.createGraphics image)
@@ -33,17 +36,14 @@
 (defn load-files [dir]
   (seq (.listFiles dir)))
 
-(comment
-(defn create-render-fn [thumbs]
-  (fn [renderer info]
-    (let [n (:value info)
-          thumb (get thumbs n)]
-      (.setIcon renderer (ImageIcon. thumb)))))
-)
+(defn create-item-label [f]
+  (doto (JLabel. (.getName f) (ImageIcon. (create-thumbnail f)) JLabel/CENTER)
+    (.setVerticalTextPosition JLabel/BOTTOM)
+    (.setHorizontalTextPosition JLabel/CENTER)))
 
-(defn create-item-panel [name]
+(defn create-item-panel [f]
   (doto (JPanel.)
-    (.add (JLabel. name))))
+    (.add (create-item-label f))))
 
 (defn layout [item-panels width]
   (let [indexed-items (map vector item-panels (iterate inc 0))
@@ -58,9 +58,7 @@
 
 (defn create-files-grid [dir]
   (let [files (load-files dir)
-        thumbs (into {} (map (fn [f] [(.getName f) (create-thumbnail f)]) files))
-        file-names (map #(.getName %) files)
-        item-panels (map create-item-panel file-names)
+        item-panels (map create-item-panel files)
         grid-panel (proxy [JPanel] []
                     (paintComponent [g]
                       (proxy-super paintComponent g))
