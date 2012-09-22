@@ -111,9 +111,14 @@
     (mousePressed [e]
       (println "press")
       (cond
-        (ctrl-pressed? e) 
-          (dosync 
-            (select-item (find-item (.getX e) (.getY e))))
+        (ctrl-pressed? e)
+          (let [item (find-item (.getX e) (.getY e))
+                in-selected? (some #(= item %) @selected-items)
+                alter-fn (if in-selected? unselect-item select-item)] 
+            (dosync 
+              (alter-fn item)))
+        (shift-pressed? e)
+          nil
         :else 
           (dosync 
             (unselect-all-items)
@@ -183,8 +188,7 @@
         (dosync
           (ref-set items its)
           (ref-set unselected-items its))
-        (create-main-frame))
-      )))
+        (create-main-frame)))))
 
 (defn -main [& args]
   (SwingUtilities/invokeLater setup))
