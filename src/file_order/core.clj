@@ -4,7 +4,8 @@
            (java.awt.event ActionListener ComponentListener)
            (java.io File)
            (javax.imageio ImageIO)
-           (javax.swing ImageIcon JFileChooser JPanel JFrame JButton JLabel JScrollPane SwingUtilities)))
+           (javax.swing ImageIcon JFileChooser JPanel JFrame JButton JLabel JScrollPane SwingUtilities)
+           (javax.swing.event MouseInputAdapter)))
 
 (def IMAGE_HEIGHT 200)
 (def IMAGE_WIDTH  200)
@@ -47,7 +48,7 @@
   (doto (JPanel.)
     (.add (create-item-label f))))
 
-(defn layout! [panel items]
+(defn layout! [panel]
   (let [cols (max 1 (quot (.getWidth panel) ITEM_BORDER_WIDTH))]
     (.setLayout panel (GridLayout. 0 cols ITEM_BORDER ITEM_BORDER))))
 
@@ -59,19 +60,28 @@
     (componentResized [e]
       (f))))
 
-(defn create-files-grid [dir]
-  (let [files (load-files dir)
-        item-panels (map create-item-panel files)
-        grid-panel (proxy [JPanel] []
+(defn create-multiselect-mouse-listener [items]
+  (proxy [MouseInputAdapter] []
+    (mousePressed [e]
+      (println "pressed: " (.getSource e)))
+    (mouseDragged [e]
+      (println "drag"))
+    (mouseReleased [e]
+      (println "release"))))
+
+(defn create-files-grid [items]
+  (let [grid-panel (proxy [JPanel] []
                     (paintComponent [g]
                       (proxy-super paintComponent g)))
-        resize-listener (create-resize-proxy #(layout! grid-panel item-panels))]
+        resize-listener (create-resize-proxy #(layout! grid-panel))
+        mouse-listener (create-multiselect-mouse-listener items)]
+    (doseq [{panel :panel} items] 
+      (.add grid-panel panel))
     (doto grid-panel
       (.setSize 800 600)
-      (.addComponentListener resize-listener))
-    (doseq [item-panel item-panels] 
-      (.add grid-panel item-panel))
-    grid-panel))
+      (.addComponentListener resize-listener)
+      (.addMouseListener mouse-listener)
+      (.addMouseMotionListener mouse-listener))))
 
 (defn order-list [& args]
   (println "Order!"))
@@ -81,17 +91,17 @@
         action-proxy (proxy [ActionListener] []
           (actionPerformed [e]
             (action-fn)))]
-    (.addActionListener button action-proxy)
-    button))
+    (doto button 
+      (.addActionListener action-proxy))))
 
 (defn create-vertical-scrollpane [c]
   (JScrollPane. c 
     JScrollPane/VERTICAL_SCROLLBAR_AS_NEEDED 
     JScrollPane/HORIZONTAL_SCROLLBAR_NEVER))
 
-(defn create-main-frame [dir]
+(defn create-main-frame [items]
   (let [frame (JFrame.)
-        grid-panel (create-files-grid dir)]
+        grid-panel (create-files-grid items)]
     (doto frame
       (.setTitle "file-order")
       (.setDefaultCloseOperation JFrame/EXIT_ON_CLOSE)
@@ -108,11 +118,16 @@
     (.setDialogTitle chooser "Select a Directory")
     (.setFileSelectionMode chooser JFileChooser/DIRECTORIES_ONLY)
     (if (= (.showOpenDialog chooser nil) JFileChooser/APPROVE_OPTION)
-      (.getSelectedFile chooser)
-      nil)))
+      (.getSelectedFile chooser))))
+
+(defn setup []
+  (let [dir (choose-directory)]
+    (if (not (nil? dir)) 
+      (let [files (load-files dir)
+            items (map (fn [f] {:file f :panel (create-item-panel f)}) files)
+            frame (create-main-frame items)])
+      
+      )))
 
 (defn -main [& args]
-  (SwingUtilities/invokeLater 
-    #(let [dir (choose-directory)]
-        (if (not (nil? dir)) (create-main-frame dir))
-        nil)))
+  (SwingUtilities/invokeLater setup))
