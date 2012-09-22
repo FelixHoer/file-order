@@ -1,7 +1,7 @@
 (ns file-order.core
-  (:import (java.awt GraphicsEnvironment BorderLayout GridLayout Dimension Toolkit)
+  (:import (java.awt GraphicsEnvironment BorderLayout GridLayout Dimension Toolkit Color)
            (java.awt.geom AffineTransform)
-           (java.awt.event ActionListener ComponentListener)
+           (java.awt.event ActionListener ComponentListener InputEvent)
            (java.io File)
            (javax.imageio ImageIO)
            (javax.swing ImageIcon JFileChooser JPanel JFrame JButton JLabel JScrollPane SwingUtilities)
@@ -17,6 +17,13 @@
 
 (def ITEM_BORDER_HEIGHT (+ ITEM_BORDER ITEM_HEIGHT))
 (def ITEM_BORDER_WIDTH  (+ ITEM_BORDER ITEM_WIDTH))
+
+(def SELECTED_BACKGROUND (Color. 120 120 220))
+(def UNSELECTED_BACKGROUND (Color. 220 220 220))
+
+(def items (ref []))
+(def selected-items (ref []))
+(def unselected-items (ref []))
 
 (defn calculate-ratio [image]
   (let [w (.getWidth image)
@@ -46,6 +53,8 @@
 
 (defn create-item-panel [f]
   (doto (JPanel.)
+    (.setOpaque true)
+    (.setBackground UNSELECTED_BACKGROUND)
     (.add (create-item-label f))))
 
 (defn layout! [panel]
@@ -60,22 +69,68 @@
     (componentResized [e]
       (f))))
 
-(defn create-multiselect-mouse-listener [items]
+(defn in-bounds? [[x y] [a b w h]]
+  (and
+    (and (>= x a) (<= x (+ a w)))
+    (and (>= y b) (<= y (+ b h)))))
+
+(defn find-item [x y]
+  (let [convert-bounds (fn [p] 
+                        (let [r (.getBounds p nil)] 
+                          [(.getX r) (.getY r) (.getWidth r) (.getHeight r)]))]
+    (first (filter #(in-bounds? [x y] (convert-bounds (:panel %))) @items))))
+
+(defn without [i coll]
+  (filter #(not (= i %)) coll))
+
+(defn select-item [item]
+  (if (not (nil? item))
+    (do
+      (alter selected-items conj item)
+      (.setBackground (:panel item) SELECTED_BACKGROUND))))
+
+(defn unselect-item [item]
+  (if (not (nil? item))
+    (do
+      (alter selected-items #(without item %))
+      (.setBackground (:panel item) UNSELECTED_BACKGROUND))))
+
+(defn unselect-all-items []
+  (doseq [{panel :panel} @selected-items] 
+    (.setBackground panel UNSELECTED_BACKGROUND))
+  (ref-set selected-items []))
+
+(defn key-pressed? [key-mask e]
+  (= key-mask (bit-and (.getModifiersEx e) key-mask)))
+
+(def ctrl-pressed?  (partial key-pressed? InputEvent/CTRL_DOWN_MASK))
+(def shift-pressed? (partial key-pressed? InputEvent/SHIFT_DOWN_MASK))
+
+(defn create-multiselect-mouse-listener []
   (proxy [MouseInputAdapter] []
     (mousePressed [e]
-      (println "pressed: " (.getSource e)))
+      (println "press")
+      (cond
+        (ctrl-pressed? e) 
+          (dosync 
+            (select-item (find-item (.getX e) (.getY e))))
+        :else 
+          (dosync 
+            (unselect-all-items)
+            (select-item (find-item (.getX e) (.getY e)))))
+      (println @selected-items))
     (mouseDragged [e]
       (println "drag"))
     (mouseReleased [e]
       (println "release"))))
 
-(defn create-files-grid [items]
+(defn create-files-grid []
   (let [grid-panel (proxy [JPanel] []
                     (paintComponent [g]
                       (proxy-super paintComponent g)))
         resize-listener (create-resize-proxy #(layout! grid-panel))
-        mouse-listener (create-multiselect-mouse-listener items)]
-    (doseq [{panel :panel} items] 
+        mouse-listener (create-multiselect-mouse-listener)]
+    (doseq [{panel :panel} @items] 
       (.add grid-panel panel))
     (doto grid-panel
       (.setSize 800 600)
@@ -99,9 +154,9 @@
     JScrollPane/VERTICAL_SCROLLBAR_AS_NEEDED 
     JScrollPane/HORIZONTAL_SCROLLBAR_NEVER))
 
-(defn create-main-frame [items]
+(defn create-main-frame []
   (let [frame (JFrame.)
-        grid-panel (create-files-grid items)]
+        grid-panel (create-files-grid)]
     (doto frame
       (.setTitle "file-order")
       (.setDefaultCloseOperation JFrame/EXIT_ON_CLOSE)
@@ -124,9 +179,11 @@
   (let [dir (choose-directory)]
     (if (not (nil? dir)) 
       (let [files (load-files dir)
-            items (map (fn [f] {:file f :panel (create-item-panel f)}) files)
-            frame (create-main-frame items)])
-      
+            its (map (fn [f] {:file f :panel (create-item-panel f)}) files)]
+        (dosync
+          (ref-set items its)
+          (ref-set unselected-items its))
+        (create-main-frame))
       )))
 
 (defn -main [& args]
