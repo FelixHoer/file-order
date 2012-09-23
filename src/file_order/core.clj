@@ -106,6 +106,9 @@
 (def ctrl-pressed?  (partial key-pressed? InputEvent/CTRL_DOWN_MASK))
 (def shift-pressed? (partial key-pressed? InputEvent/SHIFT_DOWN_MASK))
 
+(defn in-seq? [i coll]
+  (some #(= i %) coll))
+
 (defn create-multiselect-mouse-listener []
   (proxy [MouseInputAdapter] []
     (mousePressed [e]
@@ -113,12 +116,25 @@
       (cond
         (ctrl-pressed? e)
           (let [item (find-item (.getX e) (.getY e))
-                in-selected? (some #(= item %) @selected-items)
+                in-selected? (in-seq? item @selected-items)
                 alter-fn (if in-selected? unselect-item select-item)] 
             (dosync 
               (alter-fn item)))
         (shift-pressed? e)
-          nil
+          (when-not (empty? @selected-items)
+            (let [item (find-item (.getX e) (.getY e))
+                  last-item (first @selected-items)
+                  indexed-items (map vector (iterate inc 0) @items)
+                  find-idx (fn [i] (some #(when (= i (second %)) (first %)) indexed-items))
+                  idxs [(find-idx item) (find-idx last-item)]
+                  start-idx (apply min idxs)
+                  end-idx (apply max idxs)
+                  diff (inc (- end-idx start-idx))
+                  select-candidates (take diff (drop start-idx @items))
+                  to-select (filter #(not (in-seq? % @selected-items)) select-candidates)]
+              (dosync 
+                (doseq [i to-select]
+                  (select-item i)))))
         :else 
           (dosync 
             (unselect-all-items)
