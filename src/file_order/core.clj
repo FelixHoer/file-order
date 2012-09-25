@@ -1,11 +1,12 @@
 (ns file-order.core
-  (:import (java.awt GraphicsEnvironment BorderLayout GridLayout Dimension Toolkit Color)
+  (:import (java.awt GraphicsEnvironment BorderLayout GridLayout Color)
            (java.awt.geom AffineTransform)
-           (java.awt.event ActionListener ComponentListener InputEvent)
-           (java.io File)
+           (java.awt.event ActionListener ComponentAdapter InputEvent)
            (javax.imageio ImageIO)
            (javax.swing ImageIcon JFileChooser JPanel JFrame JButton JLabel JScrollPane SwingUtilities BorderFactory)
            (javax.swing.event MouseInputAdapter)))
+
+; constants
 
 (def IMAGE_HEIGHT 200)
 (def IMAGE_WIDTH  200)
@@ -22,10 +23,14 @@
 (def UNSELECTED_BACKGROUND (Color. 220 220 220))
 (def INSERT_MARKER (Color. 100 100 255))
 
+; refs
+
 (def items (ref []))
 (def selected-items (ref []))
 (def unselected-items (ref []))
 (def drag-position (ref nil))
+
+; functions
 
 (defn calculate-ratio [image]
   (let [w (.getWidth image)
@@ -63,18 +68,15 @@
   (let [cols (max 1 (quot (.getWidth panel) ITEM_BORDER_WIDTH))]
     (.setLayout panel (GridLayout. 0 cols ITEM_BORDER ITEM_BORDER))))
 
-(defn set-items! [grid-panel]
+(defn set-panel-items! [grid-panel]
   (.removeAll grid-panel)
   (doseq [{panel :panel} @items] 
     (.add grid-panel panel))
   (.validate grid-panel))
 
 (defn create-resize-proxy [f]
-  (proxy [ComponentListener] []
-    (componentHidden [e])
-    (componentMoved [e])
-    (componentShown [e])
-    (componentResized [e]
+  (proxy [ComponentAdapter] []
+    (componentResized [_]
       (f))))
 
 (defn in-bounds? [[x y] [a b w h]]
@@ -83,8 +85,9 @@
     (and (>= y b) (<= y (+ b h)))))
 
 (defn find-item [x y]
-  (let [convert-bounds (fn [p] [(.getX p) (.getY p) (.getWidth p) (.getHeight p)])]
-    (first (filter #(in-bounds? [x y] (convert-bounds (:panel %))) @items))))
+  (let [convert-bounds (fn [p] [(.getX p) (.getY p) (.getWidth p) (.getHeight p)])
+        item-if-in-bounds #(when (in-bounds? [x y] (convert-bounds (:panel %))) %)]
+    (some item-if-in-bounds @items)))
 
 (defn without [i coll]
   (filter #(not (= i %)) coll))
@@ -93,8 +96,9 @@
   (some #(= i %) coll))
 
 (defn find-idx [i coll]
-  (let [indexed-items (map vector (iterate inc 0) coll)]
-    (some #(when (= i (second %)) (first %)) indexed-items)))
+  (let [indexed-items (map vector (iterate inc 0) coll)
+        index-for-item #(when (= i (second %)) (first %))]
+    (some index-for-item indexed-items)))
 
 (defn select-item! [item]
   (if (not (nil? item))
@@ -145,7 +149,8 @@
           end-idx (apply max idxs)
           diff (inc (- end-idx start-idx))
           select-candidates (take diff (drop start-idx @items))
-          to-select (filter #(not (in-seq? % @selected-items)) select-candidates)]
+          not-selected? #(not (in-seq? % @selected-items))
+          to-select (filter not-selected? select-candidates)]
       (dosync 
         (doseq [i to-select]
           (select-item! i))))))
@@ -188,9 +193,9 @@
       (update-drag-position! (.getX e) (.getY e))
       (.repaint grid-panel))
     (mouseReleased [_]
-      (when (not (nil? @drag-position)) 
+      (when-not (nil? @drag-position)
         (reorder-items!)
-        (set-items! grid-panel)
+        (set-panel-items! grid-panel)
         (.repaint grid-panel)))))
 
 (defn paint-drag-position! [g]
@@ -217,7 +222,7 @@
                       (paint-drag-position! g)))
         resize-listener (create-resize-proxy #(layout! grid-panel))
         mouse-listener (create-multiselect-mouse-listener grid-panel)]
-    (set-items! grid-panel)
+    (set-panel-items! grid-panel)
     (doto grid-panel
       (.setSize 800 600)
       (.setBorder (BorderFactory/createEmptyBorder ITEM_BORDER ITEM_BORDER ITEM_BORDER ITEM_BORDER))
@@ -231,9 +236,9 @@
 (defn create-button [name action-fn]
   (let [button (JButton. name)
         action-proxy (proxy [ActionListener] []
-          (actionPerformed [e]
+          (actionPerformed [_]
             (action-fn)))]
-    (doto button 
+    (doto button
       (.addActionListener action-proxy))))
 
 (defn create-vertical-scrollpane [c]
