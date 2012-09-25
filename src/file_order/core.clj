@@ -89,21 +89,28 @@
 (defn without [i coll]
   (filter #(not (= i %)) coll))
 
-(defn select-item [item]
+(defn in-seq? [i coll]
+  (some #(= i %) coll))
+
+(defn find-idx [i coll]
+  (let [indexed-items (map vector (iterate inc 0) coll)]
+    (some #(when (= i (second %)) (first %)) indexed-items)))
+
+(defn select-item! [item]
   (if (not (nil? item))
     (do
       (alter selected-items conj item)
       (alter unselected-items #(without item %))
       (.setBackground (:panel item) SELECTED_BACKGROUND))))
 
-(defn unselect-item [item]
+(defn unselect-item! [item]
   (if (not (nil? item))
     (do
       (alter unselected-items conj item)
       (alter selected-items #(without item %))
       (.setBackground (:panel item) UNSELECTED_BACKGROUND))))
 
-(defn unselect-all-items []
+(defn unselect-all-items! []
   (doseq [{panel :panel} @selected-items] 
     (.setBackground panel UNSELECTED_BACKGROUND))
   (ref-set selected-items [])
@@ -115,104 +122,99 @@
 (def ctrl-pressed?  (partial key-pressed? InputEvent/CTRL_DOWN_MASK))
 (def shift-pressed? (partial key-pressed? InputEvent/SHIFT_DOWN_MASK))
 
-(defn in-seq? [i coll]
-  (some #(= i %) coll))
+(defn modifiers [e]
+  (cond
+    (ctrl-pressed? e)  :ctrl
+    (shift-pressed? e) :shift))
 
-(defn find-idx [i coll]
-  (let [indexed-items (map vector (iterate inc 0) coll)]
-    (some #(when (= i (second %)) (first %)) indexed-items)))
+(defmulti  select-clicked! (fn [e _ _] (modifiers e)))
 
-(defn create-multiselect-mouse-listener []
+(defmethod select-clicked! :ctrl [_ x y]
+  (let [item (find-item x y)
+        in-selected? (in-seq? item @selected-items)
+        alter-fn (if in-selected? unselect-item! select-item!)] 
+    (dosync 
+      (alter-fn item))))
+
+(defmethod select-clicked! :shift [_ x y]
+  (when-not (empty? @selected-items)
+    (let [item (find-item x y)
+          last-item (first @selected-items)
+          idxs [(find-idx item @items) (find-idx last-item @items)]
+          start-idx (apply min idxs)
+          end-idx (apply max idxs)
+          diff (inc (- end-idx start-idx))
+          select-candidates (take diff (drop start-idx @items))
+          to-select (filter #(not (in-seq? % @selected-items)) select-candidates)]
+      (dosync 
+        (doseq [i to-select]
+          (select-item! i))))))
+
+(defmethod select-clicked! :default [_ x y]
+  (dosync 
+    (unselect-all-items!)
+    (select-item! (find-item x y))))
+
+(defn update-drag-position! [x y]
+  (let [pairs (partition 2 1 (concat [:before-first] @unselected-items [:after-last]))
+        coords (fn [p] [(.getX p) (.getY p)])
+        located-before? (fn [[a b]] (or (> (- y b) ITEM_HEIGHT)
+                                        (< a x)))
+        located-after? #(not (located-before? %))
+        between (fn [[a b]] (when (and (or (keyword? a) (located-before? (coords (:panel a))))
+                                       (or (keyword? b) (located-after? (coords (:panel b))))) 
+                                  a))
+        item (some between pairs)]
+    (dosync
+      (ref-set drag-position item))))
+
+(defn reorder-items! []
+  (dosync
+    (let [idx (if (= :before-first @drag-position) 
+                  0 
+                  (inc (find-idx @drag-position @unselected-items)))
+          parts (split-at idx @unselected-items)
+          new-items (concat (first parts) @selected-items (second parts))]
+      (ref-set items new-items)
+      (ref-set drag-position nil))))
+
+(defn create-multiselect-mouse-listener [grid-panel]
   (proxy [MouseInputAdapter] []
     (mousePressed [e]
-      (cond
-        (ctrl-pressed? e)
-          (let [item (find-item (.getX e) (.getY e))
-                in-selected? (in-seq? item @selected-items)
-                alter-fn (if in-selected? unselect-item select-item)] 
-            (dosync 
-              (alter-fn item)))
-        (shift-pressed? e)
-          (when-not (empty? @selected-items)
-            (let [item (find-item (.getX e) (.getY e))
-                  last-item (first @selected-items)
-                  idxs [(find-idx item @items) (find-idx last-item @items)]
-                  start-idx (apply min idxs)
-                  end-idx (apply max idxs)
-                  diff (inc (- end-idx start-idx))
-                  select-candidates (take diff (drop start-idx @items))
-                  to-select (filter #(not (in-seq? % @selected-items)) select-candidates)]
-              (dosync 
-                (doseq [i to-select]
-                  (select-item i)))))
-        :else 
-          (dosync 
-            (unselect-all-items)
-            (select-item (find-item (.getX e) (.getY e))))))
+      (select-clicked! e (.getX e) (.getY e)))
     (mouseDragged [e]
-      (let [x (.getX e) 
-            y (.getY e)
-            pairs (partition 2 1 @unselected-items)
-            coords (fn [p] [(.getX p) (.getY p)])
-            located-before? (fn [[a b]] (or (> (- y b) ITEM_HEIGHT)
-                                           (< a x)))
-            located-after? #(not (located-before? %))
-            between (fn [[a b]] (when (and (located-before? (coords (:panel a))) 
-                                           (located-after? (coords (:panel b)))) 
-                                      [a b]))
-            pair (some between pairs)]
-        (dosync
-          (ref-set drag-position 
-            (cond 
-              (located-after? (coords (:panel (first @unselected-items))))
-                [:before-first (first @unselected-items)]
-              (nil? pair)
-                [(last @unselected-items) :after-last]
-              :else
-                pair)))
-        (.repaint (.getParent (:panel (first @items)))) ; hack...
-        ))
-    (mouseReleased [e]
+      (update-drag-position! (.getX e) (.getY e))
+      (.repaint grid-panel))
+    (mouseReleased [_]
       (when (not (nil? @drag-position)) 
-        (dosync
-              (let [first-item (first @drag-position)
-                    idx (if (= :before-first first-item) 0 (inc (find-idx first-item @unselected-items)))
-                    parts (split-at idx @unselected-items)
-                    new-items (concat (first parts) @selected-items (second parts))]
-                (ref-set items new-items)
-                (ref-set drag-position nil)))
-        (let [grid-panel (.getParent (:panel (first @items)))]
-          (set-items! grid-panel)
-          (.repaint grid-panel)) ; hack...
-        ))))
+        (reorder-items!)
+        (set-items! grid-panel)
+        (.repaint grid-panel)))))
+
+(defn paint-drag-position! [g]
+  (when-not (nil? @drag-position)
+    (.setColor g INSERT_MARKER)
+    (if (= :before-first @drag-position)
+      (let [p (:panel (first @items))
+            w 2
+            h (.getHeight p)
+            x (- (.getX p) (/ (+ ITEM_BORDER w) 2))
+            y (.getY p)]
+        (.fillRect g x y w h))
+      (let [p (:panel @drag-position)
+            w 2
+            h (.getHeight p)
+            x (+ (.getX p) (.getWidth p) (/ (- ITEM_BORDER w) 2))
+            y (.getY p)]
+        (.fillRect g x y w h)))))
 
 (defn create-files-grid []
   (let [grid-panel (proxy [JPanel] []
                     (paintComponent [g]
                       (proxy-super paintComponent g)
-                      (cond
-                        (nil? @drag-position)
-                          nil
-                        (= :before-first (first @drag-position))
-                          (let [p (:panel (first @items))
-                                w 2
-                                h (.getHeight p)
-                                x (- (.getX p) (/ (+ ITEM_BORDER w) 2))
-                                y (.getY p)]
-                            (doto g
-                              (.setColor INSERT_MARKER)
-                              (.fillRect x y w h)))
-                        :else
-                          (let [p (:panel (first @drag-position))
-                                w 2
-                                h (.getHeight p)
-                                x (+ (.getX p) (.getWidth p) (/ (- ITEM_BORDER w) 2))
-                                y (.getY p)]
-                            (doto g
-                              (.setColor INSERT_MARKER)
-                              (.fillRect x y w h))))))
+                      (paint-drag-position! g)))
         resize-listener (create-resize-proxy #(layout! grid-panel))
-        mouse-listener (create-multiselect-mouse-listener)]
+        mouse-listener (create-multiselect-mouse-listener grid-panel)]
     (set-items! grid-panel)
     (doto grid-panel
       (.setSize 800 600)
@@ -221,7 +223,7 @@
       (.addMouseListener mouse-listener)
       (.addMouseMotionListener mouse-listener))))
 
-(defn order-list [& args]
+(defn order-list! [& args]
   (println "Order!"))
 
 (defn create-button [name action-fn]
@@ -245,7 +247,7 @@
       (.setDefaultCloseOperation JFrame/EXIT_ON_CLOSE)
       (.setLayout (BorderLayout.))
       (.add (create-vertical-scrollpane grid-panel) BorderLayout/CENTER)
-      (.add (create-button "Order!" order-list) BorderLayout/SOUTH)
+      (.add (create-button "Order!" order-list!) BorderLayout/SOUTH)
       (.addComponentListener (create-resize-proxy 
         #(.setSize grid-panel (.getWidth frame) (.getHeight grid-panel))))
       (.pack)
@@ -258,7 +260,7 @@
     (if (= (.showOpenDialog chooser nil) JFileChooser/APPROVE_OPTION)
       (.getSelectedFile chooser))))
 
-(defn setup []
+(defn setup! []
   (let [dir (choose-directory)]
     (if (not (nil? dir)) 
       (let [files (load-files dir)
@@ -269,4 +271,4 @@
         (create-main-frame)))))
 
 (defn -main [& args]
-  (SwingUtilities/invokeLater setup))
+  (SwingUtilities/invokeLater setup!))
