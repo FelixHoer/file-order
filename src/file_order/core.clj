@@ -26,8 +26,7 @@
 ; refs
 
 (def items (ref []))
-(def selected-items (ref []))
-(def unselected-items (ref []))
+(def last-clicked-item (ref nil))
 (def drag-position (ref nil))
 
 ; functions
@@ -89,36 +88,37 @@
         item-if-in-bounds #(when (in-bounds? [x y] (convert-bounds (:panel %))) %)]
     (some item-if-in-bounds @items)))
 
-(defn without [i coll]
-  (filter #(not (= i %)) coll))
-
-(defn in-seq? [i coll]
-  (some #(= i %) coll))
-
-(defn find-idx [i coll]
+(defn find-idx-by [k i coll]
   (let [indexed-items (map vector (iterate inc 0) coll)
-        index-for-item #(when (= i (second %)) (first %))]
+        index-for-item (fn [[idx item]] (when (= (get i k) (get item k)) idx))]
     (some index-for-item indexed-items)))
 
 (defn select-item! [item]
-  (if (not (nil? item))
-    (do
-      (alter selected-items conj item)
-      (alter unselected-items #(without item %))
-      (.setBackground (:panel item) SELECTED_BACKGROUND))))
+  (when-not (nil? item)
+    (ref-set items (map #(if (= item %) (assoc % :selected? true) %) @items))
+    (.setBackground (:panel item) SELECTED_BACKGROUND)))
+
+(defn select-item-range! [start-idx end-idx]
+  (let [indexed-items (map vector (iterate inc 0) @items)
+        between? (fn [idx] (and (>= idx start-idx) (<= idx end-idx)))
+        select-between (fn [[idx item]] (if (between? idx) (assoc item :selected? true) item))]
+    (ref-set items (map select-between indexed-items)))
+  (let [diff (inc (- end-idx start-idx))
+        select-candidates (take diff (drop start-idx @items))
+        not-selected? #(not (:selected %))
+        to-select (filter not-selected? select-candidates)]
+    (doseq [{panel :panel} to-select] 
+      (.setBackground panel SELECTED_BACKGROUND))))
 
 (defn unselect-item! [item]
-  (if (not (nil? item))
-    (do
-      (alter unselected-items conj item)
-      (alter selected-items #(without item %))
-      (.setBackground (:panel item) UNSELECTED_BACKGROUND))))
+  (when-not (nil? item)
+    (ref-set items (map #(if (= item %) (assoc % :selected? false) %) @items))
+    (.setBackground (:panel item) UNSELECTED_BACKGROUND)))
 
 (defn unselect-all-items! []
-  (doseq [{panel :panel} @selected-items] 
+  (doseq [{panel :panel} @items] 
     (.setBackground panel UNSELECTED_BACKGROUND))
-  (ref-set selected-items [])
-  (ref-set unselected-items @items))
+  (ref-set items (map #(assoc % :selected? false) @items)))
 
 (defn key-pressed? [key-mask e]
   (= key-mask (bit-and (.getModifiersEx e) key-mask)))
@@ -131,39 +131,30 @@
     (ctrl-pressed? e)  :ctrl
     (shift-pressed? e) :shift))
 
-(defmulti  select-clicked! (fn [e _ _] (modifiers e)))
+(defmulti  select-clicked! (fn [e _] (modifiers e)))
 
-(defmethod select-clicked! :ctrl [_ x y]
-  (let [item (find-item x y)
-        in-selected? (in-seq? item @selected-items)
-        alter-fn (if in-selected? unselect-item! select-item!)] 
+(defmethod select-clicked! :ctrl [_ item]
+  (let [alter-fn (if (:selected? item) unselect-item! select-item!)] 
     (dosync 
       (alter-fn item))))
 
-(defmethod select-clicked! :shift [_ x y]
-  (when-not (empty? @selected-items)
-    (let [item (find-item x y)
-          last-item (first @selected-items)
-          idxs [(find-idx item @items) (find-idx last-item @items)]
-          start-idx (apply min idxs)
-          end-idx (apply max idxs)
-          diff (inc (- end-idx start-idx))
-          select-candidates (take diff (drop start-idx @items))
-          not-selected? #(not (in-seq? % @selected-items))
-          to-select (filter not-selected? select-candidates)]
+(defmethod select-clicked! :shift [_ item]
+  (when-not (nil? @last-clicked-item)
+    (let [last-item @last-clicked-item
+          idxs [(find-idx-by :file item      @items) 
+                (find-idx-by :file last-item @items)]]
       (dosync 
-        (doseq [i to-select]
-          (select-item! i))))))
+        (apply select-item-range! (sort idxs))))))
 
-(defmethod select-clicked! :default [_ x y]
-  (let [item (find-item x y)]
-    (when-not (in-seq? item @selected-items)
-      (dosync 
-        (unselect-all-items!)
-        (select-item! item)))))
+(defmethod select-clicked! :default [_ item]
+  (when-not (:selected? item)
+    (dosync 
+      (unselect-all-items!)
+      (select-item! item))))
 
 (defn update-drag-position! [x y]
-  (let [pairs (partition 2 1 (concat [:before-first] @unselected-items [:after-last]))
+  (let [unselected-items (filter (complement :selected?) @items)
+        pairs (partition 2 1 (concat [:before-first] unselected-items [:after-last]))
         coords (fn [p] [(.getX p) (.getY p)])
         located-before? (fn [[a b]] (or (> (- y b) ITEM_HEIGHT)
                                         (< a x)))
@@ -177,18 +168,27 @@
 
 (defn reorder-items! []
   (dosync
-    (let [idx (if (= :before-first @drag-position) 
+    (let [selected-map (group-by :selected? @items)
+          selected-items (get selected-map true)
+          unselected-items (get selected-map false)
+          idx (if (= :before-first @drag-position) 
                   0 
-                  (inc (find-idx @drag-position @unselected-items)))
-          parts (split-at idx @unselected-items)
-          new-items (concat (first parts) @selected-items (second parts))]
+                  (inc (find-idx-by :file @drag-position unselected-items)))
+          parts (split-at idx unselected-items)
+          new-items (concat (first parts) selected-items (second parts))]
       (ref-set items new-items)
       (ref-set drag-position nil))))
 
 (defn create-multiselect-mouse-listener [grid-panel]
   (proxy [MouseInputAdapter] []
     (mousePressed [e]
-      (select-clicked! e (.getX e) (.getY e)))
+      (let [item (find-item (.getX e) (.getY e))]
+        (if (nil? item) 
+          (dosync 
+            (unselect-all-items!))
+          (do
+            (select-clicked! e item)
+            (dosync (ref-set last-clicked-item item))))))
     (mouseDragged [e]
       (update-drag-position! (.getX e) (.getY e))
       (.repaint grid-panel))
@@ -267,14 +267,21 @@
     (if (= (.showOpenDialog chooser nil) JFileChooser/APPROVE_OPTION)
       (.getSelectedFile chooser))))
 
+(defstruct item-struct :file :panel :selected?)
+
+(defn create-item-struct [f]
+  (struct-map item-struct
+    :file f
+    :panel (create-item-panel f)
+    :selected? false))
+
 (defn setup! []
   (let [dir (choose-directory)]
     (if (not (nil? dir)) 
       (let [files (load-files dir)
-            its (map (fn [f] {:file f :panel (create-item-panel f)}) files)]
+            its (map create-item-struct files)]
         (dosync
-          (ref-set items its)
-          (ref-set unselected-items its))
+          (ref-set items its))
         (create-main-frame)))))
 
 (defn -main [& args]
