@@ -151,9 +151,11 @@
           (select-item! i))))))
 
 (defmethod select-clicked! :default [_ x y]
-  (dosync 
-    (unselect-all-items!)
-    (select-item! (find-item x y))))
+  (let [item (find-item x y)]
+    (when-not (in-seq? item @selected-items)
+      (dosync 
+        (unselect-all-items!)
+        (select-item! item)))))
 
 (defn update-drag-position! [x y]
   (let [pairs (partition 2 1 (concat [:before-first] @unselected-items [:after-last]))
