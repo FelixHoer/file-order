@@ -9,8 +9,8 @@
 
 ; constants
 
-(def IMAGE_HEIGHT 200)
-(def IMAGE_WIDTH  200)
+(def IMAGE_HEIGHT 128)
+(def IMAGE_WIDTH  128)
 
 (def ITEM_HEIGHT (+ 30 IMAGE_HEIGHT))
 (def ITEM_WIDTH  IMAGE_WIDTH)
@@ -25,6 +25,11 @@
 (def INSERT_MARKER (Color. 100 100 255))
 
 (def FILE_PREFIX "fo")
+
+(def EXTENSION_MAP {
+  :image (set (ImageIO/getReaderFormatNames))
+  :audio #{"aac" "mp3" "ogg" "wav"}
+  :video #{"avi" "flv" "mov" "mp4" "mpeg" "mpg" "wmv"}})
 
 ; refs
 
@@ -53,12 +58,32 @@
     image))
 
 (defn load-files [dir]
-  (seq (.listFiles dir)))
+  (filter #(.isFile %) (seq (.listFiles dir))))
 
-(defn create-item-label [n f]
-  (doto (JLabel. n (ImageIcon. (create-thumbnail f)) JLabel/CENTER)
+(defn create-icon-label [n icon]
+  (doto (JLabel. n icon JLabel/CENTER)
     (.setVerticalTextPosition JLabel/BOTTOM)
     (.setHorizontalTextPosition JLabel/CENTER)))
+
+(defn extension-type [n _]
+  (let [extension (second (re-find #"^.+\.(.+)$" n))]
+    (when-not (nil? extension)
+      (let [lower-extension (.toLowerCase extension)]
+        (some (fn [[type exts]] (when (contains? exts lower-extension) type)) EXTENSION_MAP)))))
+
+(defmulti create-item-label extension-type)
+
+(defmethod create-item-label :image [n f]
+  (create-icon-label n (ImageIcon. (create-thumbnail f))))
+
+(defmethod create-item-label :audio [n _]
+  (create-icon-label n (ImageIcon. (clojure.java.io/resource "icons/audio-x-generic.png"))))
+
+(defmethod create-item-label :video [n _]
+  (create-icon-label n (ImageIcon. (clojure.java.io/resource "icons/video-x-generic.png"))))
+
+(defmethod create-item-label :default [n _]
+  (create-icon-label n (ImageIcon. (clojure.java.io/resource "icons/text-x-generic.png"))))
 
 (defn create-item-panel [n f]
   (doto (JPanel.)
