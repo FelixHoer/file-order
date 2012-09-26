@@ -2,6 +2,7 @@
   (:import (java.awt GraphicsEnvironment BorderLayout GridLayout Color)
            (java.awt.geom AffineTransform)
            (java.awt.event ActionListener ComponentAdapter InputEvent)
+           (java.io File)
            (javax.imageio ImageIO)
            (javax.swing ImageIcon JFileChooser JPanel JFrame JButton JLabel JScrollPane SwingUtilities BorderFactory)
            (javax.swing.event MouseInputAdapter)))
@@ -22,6 +23,8 @@
 (def SELECTED_BACKGROUND (Color. 120 120 220))
 (def UNSELECTED_BACKGROUND (Color. 220 220 220))
 (def INSERT_MARKER (Color. 100 100 255))
+
+(def FILE_PREFIX "fo")
 
 ; refs
 
@@ -52,16 +55,16 @@
 (defn load-files [dir]
   (seq (.listFiles dir)))
 
-(defn create-item-label [f]
-  (doto (JLabel. (.getName f) (ImageIcon. (create-thumbnail f)) JLabel/CENTER)
+(defn create-item-label [n f]
+  (doto (JLabel. n (ImageIcon. (create-thumbnail f)) JLabel/CENTER)
     (.setVerticalTextPosition JLabel/BOTTOM)
     (.setHorizontalTextPosition JLabel/CENTER)))
 
-(defn create-item-panel [f]
+(defn create-item-panel [n f]
   (doto (JPanel.)
     (.setOpaque true)
     (.setBackground UNSELECTED_BACKGROUND)
-    (.add (create-item-label f))))
+    (.add (create-item-label n f))))
 
 (defn layout! [panel]
   (let [cols (max 1 (quot (.getWidth panel) ITEM_BORDER_WIDTH))]
@@ -141,8 +144,8 @@
 (defmethod select-clicked! :shift [_ item]
   (when-not (nil? @last-clicked-item)
     (let [last-item @last-clicked-item
-          idxs [(find-idx-by :file item      @items) 
-                (find-idx-by :file last-item @items)]]
+          idxs [(find-idx-by :name item      @items) 
+                (find-idx-by :name last-item @items)]]
       (dosync 
         (apply select-item-range! (sort idxs))))))
 
@@ -173,7 +176,7 @@
           unselected-items (get selected-map false)
           idx (if (= :before-first @drag-position) 
                   0 
-                  (inc (find-idx-by :file @drag-position unselected-items)))
+                  (inc (find-idx-by :name @drag-position unselected-items)))
           parts (split-at idx unselected-items)
           new-items (concat (first parts) selected-items (second parts))]
       (ref-set items new-items)
@@ -230,8 +233,25 @@
       (.addMouseListener mouse-listener)
       (.addMouseMotionListener mouse-listener))))
 
-(defn order-list! [& args]
-  (println "Order!"))
+(defn format-file [{f :file n :name} idx len]
+  (let [padding-len (inc (int (Math/log10 len)))
+        padded-idx (with-out-str (printf (str "%" 0 padding-len "d") idx))
+        parent (.getParent f)
+        separator File/separator]
+    (File. (str parent separator FILE_PREFIX padded-idx "_" n))))
+
+(defn order-files! []
+  (let [indexed-items (map vector (iterate inc 0) @items)
+        len (count indexed-items)
+        transfer-desc (fn [[idx item]] 
+                        {:from (:file item) 
+                         :to (format-file item idx len)
+                         :item item})
+        transfers (map transfer-desc indexed-items)]
+    (doseq [{from :from to :to} transfers] 
+      (.renameTo from to))
+    (dosync
+      (ref-set items (map (fn [{item :item to :to}] (assoc item :file to)) transfers)))))
 
 (defn create-button [name action-fn]
   (let [button (JButton. name)
@@ -254,7 +274,7 @@
       (.setDefaultCloseOperation JFrame/EXIT_ON_CLOSE)
       (.setLayout (BorderLayout.))
       (.add (create-vertical-scrollpane grid-panel) BorderLayout/CENTER)
-      (.add (create-button "Order!" order-list!) BorderLayout/SOUTH)
+      (.add (create-button "Order!" order-files!) BorderLayout/SOUTH)
       (.addComponentListener (create-resize-proxy 
         #(.setSize grid-panel (.getWidth frame) (.getHeight grid-panel))))
       (.pack)
@@ -267,13 +287,18 @@
     (if (= (.showOpenDialog chooser nil) JFileChooser/APPROVE_OPTION)
       (.getSelectedFile chooser))))
 
-(defstruct item-struct :file :panel :selected?)
+(defstruct item-struct :name :file :panel :selected?)
+
+(defn strip-prefix [f]
+  (let [n (.getName f)
+        found (re-find (re-pattern (str FILE_PREFIX "\\d+" "_" "(.+)")) n)]
+    (if (nil? found) n (second found))))
 
 (defn create-item-struct [f]
-  (struct-map item-struct
-    :file f
-    :panel (create-item-panel f)
-    :selected? false))
+  (let [n (strip-prefix f)
+        p (create-item-panel n f)]
+    (println n)
+    (struct-map item-struct :name n :file f :panel p :selected? false)))
 
 (defn setup! []
   (let [dir (choose-directory)]
