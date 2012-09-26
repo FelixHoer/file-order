@@ -1,4 +1,5 @@
 (ns file-order.core
+  (:use [clojure.java.io :only (resource)])
   (:import (java.awt BorderLayout Color Dimension GraphicsEnvironment GridLayout)
            (java.awt.geom AffineTransform)
            (java.awt.event ActionListener ComponentAdapter InputEvent)
@@ -26,11 +27,18 @@
 (def INSERT_MARKER (Color. 100 100 255))
 
 (def FILE_PREFIX "fo")
+(def TITLE "file-order")
+(def ORDER_BUTTON_TEXT "Order!")
+(def FILE_CHOOSER_TEXT "Select a Directory")
 
 (def EXTENSION_MAP {
   :image (set (ImageIO/getReaderFormatNames))
   :audio #{"aac" "mp3" "ogg" "wav"}
   :video #{"avi" "flv" "mov" "mp4" "mpeg" "mpg" "wmv"}})
+
+; structs
+
+(defstruct item-struct :name :file :panel :selected?)
 
 ; refs
 
@@ -88,13 +96,13 @@
   (create-icon-label n (ImageIcon. (create-thumbnail f))))
 
 (defmethod create-item-label :audio [n _]
-  (create-icon-label n (ImageIcon. (clojure.java.io/resource "icons/audio-x-generic.png"))))
+  (create-icon-label n (ImageIcon. (resource "icons/audio-x-generic.png"))))
 
 (defmethod create-item-label :video [n _]
-  (create-icon-label n (ImageIcon. (clojure.java.io/resource "icons/video-x-generic.png"))))
+  (create-icon-label n (ImageIcon. (resource "icons/video-x-generic.png"))))
 
 (defmethod create-item-label :default [n _]
-  (create-icon-label n (ImageIcon. (clojure.java.io/resource "icons/text-x-generic.png"))))
+  (create-icon-label n (ImageIcon. (resource "icons/text-x-generic.png"))))
 
 (defn create-item-panel [n f]
   (doto (JPanel.)
@@ -318,11 +326,11 @@
   (let [frame (JFrame.)
         grid-panel (create-files-grid)]
     (doto frame
-      (.setTitle "file-order")
+      (.setTitle TITLE)
       (.setDefaultCloseOperation JFrame/EXIT_ON_CLOSE)
       (.setLayout (BorderLayout.))
       (.add (create-vertical-scrollpane grid-panel) BorderLayout/CENTER)
-      (.add (create-button "Order!" order-files!) BorderLayout/SOUTH)
+      (.add (create-button ORDER_BUTTON_TEXT order-files!) BorderLayout/SOUTH)
       (.addComponentListener (create-resize-proxy 
         #(.setSize grid-panel (.getWidth frame) (.getHeight grid-panel))))
       (.pack)
@@ -330,12 +338,10 @@
 
 (defn choose-directory []
   (let [chooser (JFileChooser.)]
-    (.setDialogTitle chooser "Select a Directory")
+    (.setDialogTitle chooser FILE_CHOOSER_TEXT)
     (.setFileSelectionMode chooser JFileChooser/DIRECTORIES_ONLY)
     (if (= (.showOpenDialog chooser nil) JFileChooser/APPROVE_OPTION)
       (.getSelectedFile chooser))))
-
-(defstruct item-struct :name :file :panel :selected?)
 
 (defn strip-prefix [f]
   (let [n (.getName f)
