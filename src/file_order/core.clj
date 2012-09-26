@@ -225,8 +225,8 @@
           idx (if (= :before-first @drag-position) 
                   0 
                   (inc (find-idx-by :name @drag-position unselected-items)))
-          parts (split-at idx unselected-items)
-          new-items (concat (first parts) selected-items (second parts))]
+          [before-items after-items] (split-at idx unselected-items)
+          new-items (concat before-items selected-items after-items)]
       (ref-set items new-items)
       (ref-set drag-position nil))))
 
@@ -363,12 +363,14 @@
 
 (defn setup! []
   (let [dir (choose-directory)]
-    (if (not (nil? dir)) 
-      (let [files (load-files dir)
-            its (map create-item-struct files)]
-        (dosync
-          (ref-set items its))
-        (create-main-frame)))))
+    (if-not (nil? dir)
+      (let [files (load-files dir)]
+        (if-not (empty? files)
+          (do
+            (dosync
+              (ref-set items (map create-item-struct files)))
+            (create-main-frame))
+          (recur))))))
 
 (defn -main [& args]
   (SwingUtilities/invokeLater setup!))
