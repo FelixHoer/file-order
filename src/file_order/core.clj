@@ -14,7 +14,7 @@
 (def IMAGE_WIDTH  128)
 
 (def ITEM_HEIGHT (+ 30 IMAGE_HEIGHT))
-(def ITEM_WIDTH  IMAGE_WIDTH)
+(def ITEM_WIDTH  (+ 10 IMAGE_WIDTH))
 
 (def ITEM_BORDER 10)
 (def OUTER_BORDER 10)
@@ -22,9 +22,10 @@
 (def ITEM_BORDER_HEIGHT (+ ITEM_BORDER ITEM_HEIGHT))
 (def ITEM_BORDER_WIDTH  (+ ITEM_BORDER ITEM_WIDTH))
 
-(def SELECTED_BACKGROUND (Color. 120 120 220))
+(def SELECTED_BACKGROUND (Color. 175 210 255))
 (def UNSELECTED_BACKGROUND (Color. 220 220 220))
-(def INSERT_MARKER (Color. 100 100 255))
+(def INSERT_MARKER (Color. 65 140 255))
+(def LAST_CLICKED_BORDER (Color. 150 150 150))
 
 (def FILE_PREFIX "fo")
 (def TITLE "file-order")
@@ -229,6 +230,13 @@
       (ref-set items new-items)
       (ref-set drag-position nil))))
 
+(defn set-last-clicked-item! [item]
+  (when-not (nil? @last-clicked-item)
+    (.setBorder (:panel @last-clicked-item) (BorderFactory/createEmptyBorder 1 1 1 1)))
+  (.setBorder (:panel item) (BorderFactory/createLineBorder LAST_CLICKED_BORDER))
+  (dosync 
+    (ref-set last-clicked-item item)))
+
 (defn create-multiselect-mouse-listener [grid-panel]
   (proxy [MouseInputAdapter] []
     (mousePressed [e]
@@ -238,7 +246,7 @@
             (unselect-all-items!))
           (do
             (select-clicked! e item)
-            (dosync (ref-set last-clicked-item item))))))
+            (set-last-clicked-item! item)))))
     (mouseDragged [e]
       (update-drag-position! (.getX e) (.getY e))
       (.repaint grid-panel))
