@@ -47,13 +47,23 @@
                 (/ IMAGE_HEIGHT w))]
     ratio))
 
+(defn claculate-limited-size [image]
+  (let [w (.getWidth image)
+        h (.getHeight image)]
+    (if (> w h)
+      [IMAGE_WIDTH (* IMAGE_HEIGHT (/ h w))]
+      [(* IMAGE_WIDTH (/ w h)) IMAGE_HEIGHT])))
+
 (defn create-thumbnail [f]
   (let [src (ImageIO/read f)
-        image (.createCompatibleImage (.getDefaultConfiguration (.getDefaultScreenDevice (GraphicsEnvironment/getLocalGraphicsEnvironment))) IMAGE_WIDTH IMAGE_HEIGHT)
+        [w h] (claculate-limited-size src)
+        graphics-env (GraphicsEnvironment/getLocalGraphicsEnvironment)
+        screen-conf (.getDefaultConfiguration (.getDefaultScreenDevice graphics-env))
+        image (.createCompatibleImage screen-conf w h)
         ratio (calculate-ratio src)
-        at (AffineTransform/getScaleInstance ratio ratio)]
+        transform (AffineTransform/getScaleInstance ratio ratio)]
     (doto (.createGraphics image)
-      (.drawRenderedImage src at)
+      (.drawRenderedImage src transform)
       (.dispose))
     image))
 
@@ -322,7 +332,6 @@
 (defn create-item-struct [f]
   (let [n (strip-prefix f)
         p (create-item-panel n f)]
-    (println n)
     (struct-map item-struct :name n :file f :panel p :selected? false)))
 
 (defn setup! []
