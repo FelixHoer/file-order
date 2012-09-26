@@ -1,10 +1,10 @@
 (ns file-order.core
-  (:import (java.awt GraphicsEnvironment BorderLayout GridLayout Color)
+  (:import (java.awt BorderLayout Color Dimension GraphicsEnvironment GridLayout)
            (java.awt.geom AffineTransform)
            (java.awt.event ActionListener ComponentAdapter InputEvent)
            (java.io File)
            (javax.imageio ImageIO)
-           (javax.swing ImageIcon JFileChooser JPanel JFrame JButton JLabel JScrollPane SwingUtilities BorderFactory)
+           (javax.swing ImageIcon BorderFactory JButton JFrame JFileChooser JLabel JScrollPane JPanel SwingUtilities)
            (javax.swing.event MouseInputAdapter)))
 
 ; constants
@@ -16,6 +16,7 @@
 (def ITEM_WIDTH  IMAGE_WIDTH)
 
 (def ITEM_BORDER 10)
+(def OUTER_BORDER 10)
 
 (def ITEM_BORDER_HEIGHT (+ ITEM_BORDER ITEM_HEIGHT))
 (def ITEM_BORDER_WIDTH  (+ ITEM_BORDER ITEM_WIDTH))
@@ -99,17 +100,20 @@
   (doto (JPanel.)
     (.setOpaque true)
     (.setBackground UNSELECTED_BACKGROUND)
-    (.add (create-item-label n f))))
+    (.setLayout (BorderLayout.))
+    (.add (create-item-label n f) BorderLayout/CENTER)))
 
 (defn layout! [panel]
-  (let [cols (max 1 (quot (.getWidth panel) ITEM_BORDER_WIDTH))]
-    (.setLayout panel (GridLayout. 0 cols ITEM_BORDER ITEM_BORDER))))
-
-(defn set-panel-items! [grid-panel]
-  (.removeAll grid-panel)
-  (doseq [{panel :panel} @items] 
-    (.add grid-panel panel))
-  (.validate grid-panel))
+  (let [width (.getWidth panel)
+        indexed-items (map vector @items (iterate inc 0))
+        cols (max 1 (quot width ITEM_BORDER_WIDTH))]
+    (doseq [[{p :panel} i] indexed-items]
+      (.setBounds p 
+        (+ OUTER_BORDER (* ITEM_BORDER_WIDTH (mod i cols)))
+        (+ OUTER_BORDER (* ITEM_BORDER_HEIGHT (quot i cols)))
+        ITEM_WIDTH 
+        ITEM_HEIGHT))
+    (.repaint panel)))
 
 (defn create-resize-proxy [f]
   (proxy [ComponentAdapter] []
@@ -233,8 +237,7 @@
     (mouseReleased [_]
       (when-not (nil? @drag-position)
         (reorder-items!)
-        (set-panel-items! grid-panel)
-        (.repaint grid-panel)))))
+        (layout! grid-panel)))))
 
 (defn paint-drag-position! [g]
   (when-not (nil? @drag-position)
@@ -253,17 +256,27 @@
             y (.getY p)]
         (.fillRect g x y w h)))))
 
+(defn calculate-preferred-size [width]
+  (let [cols (max 1 (quot width ITEM_BORDER_WIDTH))
+        rows (inc (quot (dec (count @items)) cols))]
+    (Dimension. 
+      (+ (* ITEM_BORDER_WIDTH  cols) (* 2 OUTER_BORDER)) 
+      (+ (* ITEM_BORDER_HEIGHT rows) (* 2 OUTER_BORDER)))))
+
 (defn create-files-grid []
   (let [grid-panel (proxy [JPanel] []
                     (paintComponent [g]
                       (proxy-super paintComponent g)
-                      (paint-drag-position! g)))
+                      (paint-drag-position! g))
+                    (getPreferredSize []
+                      (calculate-preferred-size (.getWidth this))))
         resize-listener (create-resize-proxy #(layout! grid-panel))
         mouse-listener (create-multiselect-mouse-listener grid-panel)]
-    (set-panel-items! grid-panel)
+    (doseq [{panel :panel} @items] 
+      (.add grid-panel panel))
     (doto grid-panel
       (.setSize 800 600)
-      (.setBorder (BorderFactory/createEmptyBorder ITEM_BORDER ITEM_BORDER ITEM_BORDER ITEM_BORDER))
+      (.setLayout nil)
       (.addComponentListener resize-listener)
       (.addMouseListener mouse-listener)
       (.addMouseMotionListener mouse-listener))))
