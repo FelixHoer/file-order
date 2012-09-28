@@ -6,7 +6,7 @@
 ; functions
 
 (defn load-files [dir]
-  (filter #(.isFile %) (seq (.listFiles dir))))
+  (sort (filter #(.isFile %) (seq (.listFiles dir)))))
 
 (defn extension-type [n]
   (when-let [extension (second (re-find #"^.+\.(.+)$" n))]
