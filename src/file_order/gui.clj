@@ -186,6 +186,9 @@
       (.addMouseListener mouse-listener)
       (.addMouseMotionListener mouse-listener))))
 
+(defn create-item-count-label []
+  (JLabel. (str " " (count (model/get-items)) " items")))
+
 (defn create-button [name action-fn]
   (let [button (JButton. name)
         action-proxy (proxy [ActionListener] []
@@ -193,6 +196,12 @@
             (action-fn)))]
     (doto button
       (.addActionListener action-proxy))))
+
+(defn create-bottom-panel []
+  (doto (JPanel.)
+    (.setLayout (BorderLayout.))
+    (.add (create-item-count-label) BorderLayout/WEST)
+    (.add (create-button ORDER_BUTTON_TEXT file/order-files!) BorderLayout/EAST)))
 
 (defn create-vertical-scrollpane [c]
   (JScrollPane. c 
@@ -207,7 +216,7 @@
       (.setDefaultCloseOperation JFrame/EXIT_ON_CLOSE)
       (.setLayout (BorderLayout.))
       (.add (create-vertical-scrollpane grid-panel) BorderLayout/CENTER)
-      (.add (create-button ORDER_BUTTON_TEXT file/order-files!) BorderLayout/SOUTH)
+      (.add (create-bottom-panel) BorderLayout/SOUTH)
       (.addComponentListener (create-resize-proxy 
         #(.setSize grid-panel (.getWidth frame) (.getHeight grid-panel))))
       (.pack)
