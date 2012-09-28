@@ -1,4 +1,5 @@
 (ns file-order.constants
+  (:use [clojure.java.io :only (resource)])
   (:import (java.awt Color)
            (javax.imageio ImageIO)))
 
@@ -24,6 +25,12 @@
 (def TITLE "file-order")
 (def ORDER_BUTTON_TEXT "Order!")
 (def FILE_CHOOSER_TEXT "Select a Directory")
+
+(def EXTENSION_TYPE_ICON {
+  :image (resource "icons/image-x-generic.png")
+  :audio (resource "icons/audio-x-generic.png")
+  :video (resource "icons/video-x-generic.png")
+  nil    (resource "icons/text-x-generic.png")})
 
 ; file
 

@@ -7,6 +7,7 @@
 ; refs
 
 (def items (ref []))
+(def items-by-name (ref {}))
 (def last-clicked-item (ref nil))
 (def drag-position (ref nil))
 
@@ -60,11 +61,15 @@
     (ref-set items new-items)
     (ref-set drag-position nil)))
 
+(defn get-item-by-name [n]
+  (get @items-by-name n))
+
 (defn get-items []
   @items)
 
 (defn set-items! [its]
   (ref-set items its)
+  (ref-set items-by-name (into {} (map (fn [i] [(:name i) i]) its)))
   its)
 
 (defn get-drag-position []

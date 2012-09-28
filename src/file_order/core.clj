@@ -8,7 +8,7 @@
 
 (defn create-item-struct [f]
   (let [n (file/strip-prefix f)
-        p (gui/create-item-panel n f)]
+        p (gui/create-item-panel n)]
     (struct-map model/item-struct :name n :file f :panel p :selected? false)))
 
 (defn setup! []
@@ -18,7 +18,8 @@
         (do
           (dosync
             (model/set-items! (map create-item-struct files)))
-          (gui/create-main-frame))
+          (gui/create-main-frame)
+          (gui/set-image-previews-async!))
         (recur)))))
 
 (defn -main [& args]

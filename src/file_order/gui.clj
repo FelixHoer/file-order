@@ -2,11 +2,11 @@
   (:require [file-order.model         :as model]
             [file-order.file          :as file]
             [file-order.preview.image :as image])
-  (:use [clojure.java.io :only (resource)]
-        [file-order.constants])
+  (:use [file-order.constants])
   (:import (java.awt BorderLayout Dimension)
            (java.awt.event ActionListener ComponentAdapter InputEvent)
-           (javax.swing ImageIcon BorderFactory JButton JFrame JFileChooser JLabel JScrollPane JPanel)
+           (javax.swing ImageIcon BorderFactory JButton JFrame JFileChooser 
+                        JLabel JScrollPane JPanel SwingUtilities)
            (javax.swing.event MouseInputAdapter)))
 
 ; functions
@@ -20,31 +20,19 @@
         item-if-in-bounds #(when (in-bounds? [x y] (convert-bounds (:panel %))) %)]
     (some item-if-in-bounds (model/get-items))))
 
-(defn create-icon-label [n icon]
-  (doto (JLabel. n icon JLabel/CENTER)
-    (.setVerticalTextPosition JLabel/BOTTOM)
-    (.setHorizontalTextPosition JLabel/CENTER)))
+(defn create-item-label [n]
+  (let [ext-type (file/extension-type n)
+        icon (get EXTENSION_TYPE_ICON ext-type)]
+    (doto (JLabel. n (ImageIcon. icon) JLabel/CENTER)
+      (.setVerticalTextPosition JLabel/BOTTOM)
+      (.setHorizontalTextPosition JLabel/CENTER))))
 
-(defmulti  create-item-label (fn [n _] (file/extension-type n)))
-
-(defmethod create-item-label :image [n f]
-  (create-icon-label n (ImageIcon. (image/create-thumbnail f))))
-
-(defmethod create-item-label :audio [n _]
-  (create-icon-label n (ImageIcon. (resource "icons/audio-x-generic.png"))))
-
-(defmethod create-item-label :video [n _]
-  (create-icon-label n (ImageIcon. (resource "icons/video-x-generic.png"))))
-
-(defmethod create-item-label :default [n _]
-  (create-icon-label n (ImageIcon. (resource "icons/text-x-generic.png"))))
-
-(defn create-item-panel [n f]
+(defn create-item-panel [n]
   (doto (JPanel.)
     (.setOpaque true)
     (.setBackground UNSELECTED_BACKGROUND)
     (.setLayout (BorderLayout.))
-    (.add (create-item-label n f) BorderLayout/CENTER)))
+    (.add (create-item-label n) BorderLayout/CENTER)))
 
 (defn layout! [panel]
   (let [width (.getWidth panel)
@@ -227,3 +215,12 @@
     (.setFileSelectionMode chooser JFileChooser/DIRECTORIES_ONLY)
     (if (= (.showOpenDialog chooser nil) JFileChooser/APPROVE_OPTION)
       (.getSelectedFile chooser))))
+
+(defn set-image-preview! [{p :panel} thumb]
+  (let [label (.getComponent p 0)]
+      (.setIcon label (ImageIcon. thumb))))
+
+(defn set-image-previews-async! []
+  (.start (Thread. 
+    #(doseq [{item :item thumb :thumb} (image/create-thumbnail-seq)]
+      (SwingUtilities/invokeLater (fn [] (set-image-preview! item thumb)))))))

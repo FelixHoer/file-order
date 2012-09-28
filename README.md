@@ -29,6 +29,7 @@ lein run
 
 * [Gnome Icons](http://www.gnome.org/)
   * audio-x-generic.png
+  * image-x-generic.png
   * text-x-generic.png
   * video-x-generic.png
 

@@ -9,10 +9,9 @@
   (filter #(.isFile %) (seq (.listFiles dir))))
 
 (defn extension-type [n]
-  (let [extension (second (re-find #"^.+\.(.+)$" n))]
-    (when-not (nil? extension)
-      (let [lower-extension (.toLowerCase extension)]
-        (some (fn [[type exts]] (when (contains? exts lower-extension) type)) EXTENSION_MAP)))))
+  (when-let [extension (second (re-find #"^.+\.(.+)$" n))]
+    (let [lower-extension (.toLowerCase extension)]
+      (some (fn [[type exts]] (when (contains? exts lower-extension) type)) EXTENSION_MAP))))
 
 (defn strip-prefix [f]
   (let [n (.getName f)
