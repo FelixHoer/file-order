@@ -53,23 +53,31 @@
 
 (defn select-item! [item]
   (when-not (nil? item)
-    (model/set-item-selected! item true)
+    (dosync 
+      (model/set-item-selected! item true))
     (.setBackground (:panel item) SELECTED_BACKGROUND)))
 
 (defn unselect-item! [item]
   (when-not (nil? item)
-    (model/set-item-selected! item false)
+    (dosync 
+      (model/set-item-selected! item false))
     (.setBackground (:panel item) UNSELECTED_BACKGROUND)))
 
 (defn select-item-range! [item]
-  (let [to-select (model/set-last-to-item-selected! item true)]
-    (doseq [{panel :panel} to-select]
-      (.setBackground panel SELECTED_BACKGROUND))))
+  (let [its (ref nil)] 
+    (dosync
+      (ref-set its (model/set-last-to-item-selected! item true)))
+    (when-let [selected-items @its]
+      (doseq [{panel :panel} selected-items] 
+        (.setBackground panel SELECTED_BACKGROUND)))))
 
 (defn unselect-all-items! []
-  (let [unselected-items (model/set-all-items-selected! false)]
-    (doseq [{panel :panel} unselected-items] 
-      (.setBackground panel UNSELECTED_BACKGROUND))))
+  (let [its (ref nil)] 
+    (dosync
+      (ref-set its (model/set-all-items-selected! false)))
+    (when-let [unselected-items @its]
+      (doseq [{panel :panel} unselected-items] 
+        (.setBackground panel UNSELECTED_BACKGROUND)))))
 
 (defn key-pressed? [key-mask e]
   (= key-mask (bit-and (.getModifiersEx e) key-mask)))
@@ -87,19 +95,16 @@
 (defmethod select-clicked! :ctrl [_ item]
   (when-not (nil? item)
     (let [alter-fn (if (:selected? item) unselect-item! select-item!)] 
-      (dosync 
-        (alter-fn item)))))
+      (alter-fn item))))
 
 (defmethod select-clicked! :shift [_ item]
   (when-not (nil? (model/get-last-clicked))
-    (dosync 
-      (select-item-range! item))))
+    (select-item-range! item)))
 
 (defmethod select-clicked! :default [_ item]
   (when-not (:selected? item)
-    (dosync
-      (unselect-all-items!)
-      (select-item! item))))
+    (unselect-all-items!)
+    (select-item! item)))
 
 (defn update-drag-position! [x y]
   (let [unselected-items (filter (complement :selected?) (model/get-items))
@@ -129,8 +134,7 @@
         (do
           (select-clicked! e item)
           (update-last-clicked! item))
-        (dosync 
-          (unselect-all-items!))))
+        (unselect-all-items!)))
     (mouseDragged [e]
       (update-drag-position! (.getX e) (.getY e))
       (.repaint grid-panel))

@@ -26,14 +26,17 @@
     (File. (str parent separator FILE_PREFIX padded-idx "_" n))))
 
 (defn order-files! []
-  (let [indexed-items (map vector (iterate inc 0) (model/get-items))
-        len (count indexed-items)
-        transfer-desc (fn [[idx item]] 
-                        {:from (:file item) 
-                         :to (format-file item idx len)
-                         :item item})
-        transfers (map transfer-desc indexed-items)]
-    (doseq [{from :from to :to} transfers] 
-      (.renameTo from to))
+  (let [transfers (ref nil)]
     (dosync
-      (model/set-items! (map (fn [{item :item to :to}] (assoc item :file to)) transfers)))))
+      (let [indexed-items (map vector (iterate inc 0) (model/get-items))
+            len (count indexed-items)
+            transfer-desc (fn [[idx item]] 
+                            {:from (:file item) 
+                             :to (format-file item idx len)
+                             :item item})
+            trans (map transfer-desc indexed-items)]
+        (model/set-items! (map (fn [{item :item to :to}] (assoc item :file to)) trans))
+        (ref-set transfers trans)))
+    (when-let [trans @transfers]
+      (doseq [{from :from to :to} trans] 
+        (.renameTo from to)))))
