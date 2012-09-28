@@ -1,15 +1,17 @@
 # file-order
 
-file-order is a Java/Clojure desktop application, 
-which allows the user to sort the contents of a folder via drag and drop.
-To model this new succession for alphabetically ordered systems, 
-the files are renamed (a prefix will be added).
+file-order is a Java/Clojure desktop application,
+that allows to specify the order of files via drag-and-drop for systems, 
+which rely on alphabetical order.
 
-This comes in handy when dealing with external devices, 
+![Diagram](https://github.com/FelixHoer/file-order/raw/master/diagram.png)
+
+This comes in handy when dealing with devices or applications, 
 that depend on the alphabetical ordering of files, ie:
 
-* TV that displays a slide show of pictures in your desired order
-* Car radio that plays songs from a pendrive or CD
+* slide show of pictures on a PC
+* episodes of a series on the TV
+* songs from a pendrive or CD on a Car radio
 
 ## Usage
 
@@ -18,6 +20,15 @@ Start the program by entering the following command in the `file-order` folder:
 ```
 lein run
 ```
+
+Select a directory, containing files to sort.
+
+![Screenshot](https://github.com/FelixHoer/file-order/raw/master/screenshot.jpg)
+
+Drag and drop items to their desired position.
+
+Click `Order!` to enforce the desired succession. 
+(a prefix will be added to achieve the same succession for alphabetical ordering)
 
 ## Requirements
 
